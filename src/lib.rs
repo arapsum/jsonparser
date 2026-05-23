@@ -172,13 +172,9 @@ impl Lexer {
         }
 
         // integer part
-        loop {
-            if let Some(c @ b'0'..=b'9') = self.current() {
-                s.push(c as char);
-                self.advance();
-            } else {
-                break;
-            }
+        while let Some(c @ b'0'..=b'9') = self.current() {
+            s.push(c as char);
+            self.advance();
         }
 
         // optional decimal part
@@ -186,14 +182,9 @@ impl Lexer {
             s.push('.');
             self.advance();
 
-            loop {
-                match self.current() {
-                    Some(c @ b'0'..=b'9') => {
-                        s.push(c as char);
-                        self.advance();
-                    }
-                    _ => break,
-                }
+            while let Some(c @ b'0'..=b'9') = self.current() {
+                s.push(c as char);
+                self.advance();
             }
         }
 
