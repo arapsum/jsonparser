@@ -1,0 +1,14 @@
+[package]
+name = "jsonparser"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "jsonparser"
+path = "src/bin/main.rs"
+
+[lib]
+name = "jsonparser"
+path = "src/lib.rs"
+
+[dependencies]
