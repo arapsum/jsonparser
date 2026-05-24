@@ -1,4 +1,4 @@
-use crate::{JsonValue, tokeniser::Token};
+use crate::{JsonValue, Token};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -6,12 +6,12 @@ pub struct Parser {
 }
 
 impl Parser {
-    #[must_use] 
+    #[must_use]
     pub fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn current(&self) -> &Token {
         if self.pos < self.tokens.len() {
             &self.tokens[self.pos]
@@ -140,7 +140,7 @@ impl Parser {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn parse(tokens: Vec<Token>) -> JsonValue {
     let mut parser = Parser::new(tokens);
     parser.parse_value()
