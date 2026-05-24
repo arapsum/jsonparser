@@ -1,5 +1,6 @@
 use crate::{JsonValue, Token};
 
+#[derive(Debug, Clone)]
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
