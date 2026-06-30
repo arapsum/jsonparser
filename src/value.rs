@@ -1,16 +1,43 @@
 use std::fmt::{self, Display, Write};
 
+/// A parsed JSON value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
-    Object(Vec<(String, JsonValue)>),
-    Array(Vec<JsonValue>),
-    String(String),
-    Number(f64),
-    Boolean(bool),
+    /// A JSON object.
+    Object(
+        /// Object members stored in source order as key/value pairs.
+        Vec<(String, JsonValue)>,
+    ),
+    /// A JSON array.
+    Array(
+        /// Array elements stored in source order.
+        Vec<JsonValue>,
+    ),
+    /// A JSON string.
+    String(
+        /// String contents after escape decoding.
+        String,
+    ),
+    /// A JSON number.
+    Number(
+        /// Numeric value stored as `f64`.
+        f64,
+    ),
+    /// A JSON boolean.
+    Boolean(
+        /// Boolean value.
+        bool,
+    ),
+    /// The JSON `null` value.
     Null,
 }
 
 impl Display for JsonValue {
+    /// Formats a JSON value in normalized JSON-like form.
+    ///
+    /// # Errors
+    ///
+    /// Returns any formatting error reported by the formatter.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", display(self))
     }

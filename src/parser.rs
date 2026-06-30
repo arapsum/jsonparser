@@ -1,8 +1,11 @@
 use crate::{JsonError, JsonValue, Result, Token};
 
+/// Recursive-descent parser over a token stream.
 #[derive(Debug, Clone)]
 pub struct Parser {
+    /// Tokens being parsed.
     tokens: Vec<Token>,
+    /// Current token position in `tokens`.
     pos: usize,
 }
 
@@ -12,6 +15,12 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
+    /// Returns the current token without advancing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedEnd`] if the parser is already past the
+    /// end of the token stream.
     pub fn current(&self) -> Result<&Token> {
         if self.pos < self.tokens.len() {
             Ok(&self.tokens[self.pos])
@@ -27,6 +36,15 @@ impl Parser {
         self.pos += 1;
     }
 
+    /// Consumes and returns the current token.
+    ///
+    /// `expected` is only used to describe the error if the stream has already
+    /// ended.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedEnd`] if there is no current token to
+    /// consume.
     pub fn expect(&mut self, expected: &'static str) -> Result<Token> {
         if self.pos < self.tokens.len() {
             let token = self.tokens[self.pos].clone();
@@ -40,6 +58,15 @@ impl Parser {
         }
     }
 
+    /// Parses a JSON value from the current token.
+    ///
+    /// Values may be objects, arrays, strings, numbers, booleans, or `null`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedEnd`] if no value is available, or
+    /// [`JsonError::UnexpectedToken`] if the current token cannot begin a JSON
+    /// value. Errors from nested object and array parsing are propagated.
     pub fn parse_value(&mut self) -> Result<JsonValue> {
         let position = self.pos;
 
@@ -76,6 +103,17 @@ impl Parser {
         }
     }
 
+    /// Parses a JSON array from the current token.
+    ///
+    /// The current token is expected to be [`Token::LeftBracket`]. On success,
+    /// the parser advances past the closing bracket and returns
+    /// [`JsonValue::Array`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedEnd`] if the array is not closed, or
+    /// [`JsonError::UnexpectedToken`] when an element, comma, or closing bracket
+    /// is missing or malformed. Errors from nested values are propagated.
     pub fn parse_array(&mut self) -> Result<JsonValue> {
         self.advance(); // consume the opening paranthesis
 
@@ -111,6 +149,17 @@ impl Parser {
         Ok(JsonValue::Array(array))
     }
 
+    /// Parses a JSON object from the current token.
+    ///
+    /// The current token is expected to be [`Token::LeftBrace`]. On success,
+    /// the parser advances past the closing brace and returns
+    /// [`JsonValue::Object`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedEnd`] if the object is not closed, or
+    /// [`JsonError::UnexpectedToken`] when a string key, colon, comma, closing
+    /// brace, or nested value is missing or malformed.
     pub fn parse_object(&mut self) -> Result<JsonValue> {
         self.advance();
 
@@ -175,6 +224,13 @@ impl Parser {
     }
 }
 
+/// Parses a complete JSON value from a token stream.
+///
+/// # Errors
+///
+/// Returns parser errors for malformed input and
+/// [`JsonError::TrailingTokens`] when tokens remain after the top-level JSON
+/// value.
 pub fn parse(tokens: Vec<Token>) -> Result<JsonValue> {
     let mut parser = Parser::new(tokens);
     let value = parser.parse_value()?;

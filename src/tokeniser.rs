@@ -1,5 +1,6 @@
 use crate::{JsonError, Result};
 
+/// A lexical token produced from JSON source text.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     /// Represents the left curly brace character '{'
@@ -10,18 +11,34 @@ pub enum Token {
     LeftBracket,
     /// Represents the right square bracker character ']'
     RightBracket,
+    /// Represents the object key/value separator ':'.
     Colon,
+    /// Represents the value separator ','.
     Comma,
-    String(String),
-    Number(f64),
+    /// Represents a decoded JSON string value.
+    String(
+        /// Decoded string contents.
+        String,
+    ),
+    /// Represents a JSON number parsed as `f64`.
+    Number(
+        /// Parsed numeric value.
+        f64,
+    ),
+    /// Represents the literal `true`.
     True,
+    /// Represents the literal `false`.
     False,
+    /// Represents the literal `null`.
     Null,
 }
 
+/// A byte-oriented lexer over JSON source text.
 #[derive(Debug, Clone)]
 pub struct Lexer {
+    /// Input bytes being tokenised.
     input: Vec<u8>,
+    /// Current byte position in `input`.
     pos: usize,
 }
 
@@ -56,6 +73,21 @@ impl Lexer {
         }
     }
 
+    /// Reads a JSON string from the current position.
+    ///
+    /// The current byte is expected to be the opening double quote. The
+    /// returned string is decoded, so supported escape sequences are converted
+    /// to their character values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnterminatedString`] if the closing quote is
+    /// missing, [`JsonError::InvalidEscape`] for an unsupported escape,
+    /// [`JsonError::UnterminatedEscape`] for a dangling backslash,
+    /// [`JsonError::InvalidUnicodeEscape`] or
+    /// [`JsonError::UnterminatedUnicodeEscape`] for malformed `\uXXXX`
+    /// escapes, and [`JsonError::InvalidUnicodeCodepoint`] if the decoded
+    /// codepoint is not a valid Unicode scalar value.
     pub fn read_string(&mut self) -> Result<String> {
         let start = self.pos;
 
@@ -139,6 +171,17 @@ impl Lexer {
         }
     }
 
+    /// Reads four hexadecimal digits from a `\uXXXX` escape.
+    ///
+    /// The current byte is expected to be the first hexadecimal digit after
+    /// `\u`. On success, the lexer advances past all four digits and returns
+    /// the decoded codepoint value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::InvalidUnicodeEscape`] when any digit is not
+    /// hexadecimal, or [`JsonError::UnterminatedUnicodeEscape`] if fewer than
+    /// four digits remain.
     pub fn read_unicode_escape(&mut self) -> Result<u32> {
         let mut value: u32 = 0;
         for _ in 0..4 {
@@ -166,6 +209,16 @@ impl Lexer {
         Ok(value)
     }
 
+    /// Reads an exact JSON keyword from the current position.
+    ///
+    /// `s` is expected to be one of the JSON literals `true`, `false`, or
+    /// `null`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::UnexpectedCharacter`] when the next input byte does
+    /// not match the keyword, or [`JsonError::UnexpectedEnd`] if the input ends
+    /// before the keyword is complete.
     pub fn read_keyword(&mut self, s: &'static str) -> Result<()> {
         for expected in s.as_bytes() {
             match self.current() {
@@ -187,6 +240,15 @@ impl Lexer {
         Ok(())
     }
 
+    /// Reads a JSON number from the current position.
+    ///
+    /// This parser supports an optional leading minus sign, digits, and an
+    /// optional fractional part, then parses the collected literal as `f64`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError::InvalidNumber`] if the collected literal cannot be
+    /// parsed as `f64`.
     pub fn read_number(&mut self) -> Result<f64> {
         let start = self.pos;
         let mut s = String::new();
@@ -221,6 +283,15 @@ impl Lexer {
     }
 }
 
+/// Converts JSON source text into a vector of tokens.
+///
+/// Whitespace outside strings is skipped. String escapes are decoded while
+/// tokenising.
+///
+/// # Errors
+///
+/// Returns lexer errors for malformed strings, malformed unicode escapes,
+/// invalid numbers, truncated keywords, or unexpected characters.
 pub fn tokenise(input: &str) -> Result<Vec<Token>> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
