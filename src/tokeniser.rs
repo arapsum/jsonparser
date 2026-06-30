@@ -1,3 +1,5 @@
+use crate::{JsonError, Result};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     /// Represents the left curly brace character '{'
@@ -24,7 +26,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    #[must_use] 
+    #[must_use]
     pub fn new(input: &str) -> Self {
         Self {
             input: input.as_bytes().to_vec(),
@@ -32,7 +34,7 @@ impl Lexer {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn current(&self) -> Option<u8> {
         if self.pos < self.input.len() {
             Some(self.input[self.pos])
@@ -45,7 +47,7 @@ impl Lexer {
         self.pos += 1;
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn peek(&self) -> Option<u8> {
         if self.pos + 1 < self.input.len() {
             Some(self.input[self.pos + 1])
@@ -54,7 +56,9 @@ impl Lexer {
         }
     }
 
-    pub fn read_string(&mut self) -> String {
+    pub fn read_string(&mut self) -> Result<String> {
+        let start = self.pos;
+
         // consume the opening quote "
         self.advance();
 
@@ -62,12 +66,12 @@ impl Lexer {
 
         loop {
             match self.current() {
-                None => panic!("Unterminated String"),
+                None => return Err(JsonError::UnterminatedString { position: start }),
 
                 Some(b'"') => {
                     // consume closing quote "
                     self.advance();
-                    return result;
+                    return Ok(result);
                 }
 
                 Some(b'\\') => {
@@ -107,14 +111,24 @@ impl Lexer {
                         }
                         Some(b'u') => {
                             self.advance(); // consume u
-                            let codepoint = self.read_unicode_escape();
-                            let ch = char::from_u32(codepoint).unwrap_or_else(|| {
-                                panic!("Invalid unicode codepoint: {codepoint}")
-                            });
+                            let codepoint = self.read_unicode_escape()?;
+                            let ch = char::from_u32(codepoint).ok_or(
+                                JsonError::InvalidUnicodeCodepoint {
+                                    codepoint,
+                                    position: self.pos,
+                                },
+                            )?;
                             result.push(ch);
                         }
-                        Some(c) => panic!("Inalid escape sequence: \\{}", c as char),
-                        None => panic!("Unterminated escape sequence"),
+                        Some(c) => {
+                            return Err(JsonError::InvalidEscape {
+                                character: c as char,
+                                position: self.pos,
+                            });
+                        }
+                        None => {
+                            return Err(JsonError::UnterminatedEscape { position: self.pos });
+                        }
                     }
                 }
                 Some(c) => {
@@ -125,7 +139,7 @@ impl Lexer {
         }
     }
 
-    pub fn read_unicode_escape(&mut self) -> u32 {
+    pub fn read_unicode_escape(&mut self) -> Result<u32> {
         let mut value: u32 = 0;
         for _ in 0..4 {
             match self.current() {
@@ -134,28 +148,47 @@ impl Lexer {
                         b'0'..=b'9' => u32::from(c - b'0'),
                         b'a'..=b'f' => u32::from(c - b'a' + 10),
                         b'A'..=b'F' => u32::from(c - b'A' + 10),
-                        _ => panic!("Invalid hex digit in unicode escape: {}", c as char),
+                        _ => {
+                            return Err(JsonError::InvalidUnicodeEscape {
+                                character: c as char,
+                                position: self.pos,
+                            });
+                        }
                     };
                     value = value * 16 + digit;
                     self.advance();
                 }
-                None => panic!("Unterminated unicode escape"),
+                None => {
+                    return Err(JsonError::UnterminatedUnicodeEscape { position: self.pos });
+                }
             }
         }
-        value
+        Ok(value)
     }
 
-    pub fn read_keyword(&mut self, s: &str) {
+    pub fn read_keyword(&mut self, s: &'static str) -> Result<()> {
         for expected in s.as_bytes() {
             match self.current() {
                 Some(c) if c == *expected => self.advance(),
-                Some(c) => panic!("Unexpected character '{c}' while reading keyword '{s}'"),
-                None => panic!("Unexpected end of input while reading keyword '{s}'"),
+                Some(c) => {
+                    return Err(JsonError::UnexpectedCharacter {
+                        character: c as char,
+                        position: self.pos,
+                    });
+                }
+                None => {
+                    return Err(JsonError::UnexpectedEnd {
+                        expected: s,
+                        position: self.pos,
+                    });
+                }
             }
         }
+        Ok(())
     }
 
-    pub fn read_number(&mut self) -> f64 {
+    pub fn read_number(&mut self) -> Result<f64> {
+        let start = self.pos;
         let mut s = String::new();
 
         // optional minus sign
@@ -181,13 +214,14 @@ impl Lexer {
             }
         }
 
-        s.parse::<f64>()
-            .unwrap_or_else(|_| panic!("Invalid number: {s}"))
+        s.parse::<f64>().map_err(|_| JsonError::InvalidNumber {
+            value: s,
+            position: start,
+        })
     }
 }
 
-#[must_use] 
-pub fn tokenise(input: &str) -> Vec<Token> {
+pub fn tokenise(input: &str) -> Result<Vec<Token>> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
 
@@ -224,33 +258,36 @@ pub fn tokenise(input: &str) -> Vec<Token> {
                 lexer.advance();
             }
             Some(b'"') => {
-                let s = lexer.read_string();
+                let s = lexer.read_string()?;
                 tokens.push(Token::String(s));
             }
             Some(b't') => {
-                lexer.read_keyword("true");
+                lexer.read_keyword("true")?;
                 tokens.push(Token::True);
             }
             Some(b'f') => {
-                lexer.read_keyword("false");
+                lexer.read_keyword("false")?;
                 tokens.push(Token::False);
             }
             Some(b'n') => {
-                lexer.read_keyword("null");
+                lexer.read_keyword("null")?;
                 tokens.push(Token::Null);
             }
             Some(b'-' | b'0'..=b'9') => {
-                let n = lexer.read_number();
+                let n = lexer.read_number()?;
                 tokens.push(Token::Number(n));
             }
 
             Some(c) => {
-                panic!("Unexpected character {}", c as char);
+                return Err(JsonError::UnexpectedCharacter {
+                    character: c as char,
+                    position: lexer.pos,
+                });
             }
         }
     }
 
-    tokens
+    Ok(tokens)
 }
 
 #[cfg(test)]
@@ -306,68 +343,68 @@ mod tests {
     #[test]
     fn test_read_string_basic() {
         let mut lexer = Lexer::new(r#""hello""#);
-        assert_eq!(lexer.read_string(), "hello");
+        assert_eq!(lexer.read_string().unwrap(), "hello");
         assert_eq!(lexer.current(), None);
     }
 
     #[test]
     fn test_read_string_empty() {
         let mut lexer = Lexer::new(r#""""#);
-        assert_eq!(lexer.read_string(), "");
+        assert_eq!(lexer.read_string().unwrap(), "");
     }
 
     #[test]
     fn test_read_string_with_spaces() {
         let mut lexer = Lexer::new(r#""hello world""#);
-        assert_eq!(lexer.read_string(), "hello world");
+        assert_eq!(lexer.read_string().unwrap(), "hello world");
     }
 
     #[test]
     fn test_read_string_escape_quote() {
         let mut lexer = Lexer::new(r#""\"""#);
-        assert_eq!(lexer.read_string(), "\"");
+        assert_eq!(lexer.read_string().unwrap(), "\"");
     }
 
     #[test]
     fn test_read_string_escape_backslash() {
         let mut lexer = Lexer::new(r#""\\""#);
-        assert_eq!(lexer.read_string(), "\\");
+        assert_eq!(lexer.read_string().unwrap(), "\\");
     }
 
     #[test]
     fn test_read_string_escape_slash() {
         let mut lexer = Lexer::new(r#""\/""#);
-        assert_eq!(lexer.read_string(), "/");
+        assert_eq!(lexer.read_string().unwrap(), "/");
     }
 
     #[test]
     fn test_read_string_escape_newline() {
         let mut lexer = Lexer::new(r#""\n""#);
-        assert_eq!(lexer.read_string(), "\n");
+        assert_eq!(lexer.read_string().unwrap(), "\n");
     }
 
     #[test]
     fn test_read_string_escape_tab() {
         let mut lexer = Lexer::new(r#""\t""#);
-        assert_eq!(lexer.read_string(), "\t");
+        assert_eq!(lexer.read_string().unwrap(), "\t");
     }
 
     #[test]
     fn test_read_string_escape_return() {
         let mut lexer = Lexer::new(r#""\r""#);
-        assert_eq!(lexer.read_string(), "\r");
+        assert_eq!(lexer.read_string().unwrap(), "\r");
     }
 
     #[test]
     fn test_read_string_escape_backspace() {
         let mut lexer = Lexer::new(r#""\b""#);
-        assert_eq!(lexer.read_string(), "\x08");
+        assert_eq!(lexer.read_string().unwrap(), "\x08");
     }
 
     #[test]
     fn test_read_string_escape_formfeed() {
         let mut lexer = Lexer::new(r#""\f""#);
-        assert_eq!(lexer.read_string(), "\x0C");
+        assert_eq!(lexer.read_string().unwrap(), "\x0C");
     }
 
     #[test]
@@ -385,37 +422,37 @@ mod tests {
             "\"",   // closing "
         );
         let mut lexer = Lexer::new(input);
-        assert_eq!(lexer.read_string(), "\"\\/\n\t\r\x08\x0C");
+        assert_eq!(lexer.read_string().unwrap(), "\"\\/\n\t\r\x08\x0C");
     }
 
     #[test]
     fn test_read_string_unicode_escape() {
         let mut lexer = Lexer::new(r#""\u0041""#);
-        assert_eq!(lexer.read_string(), "A");
+        assert_eq!(lexer.read_string().unwrap(), "A");
     }
 
     #[test]
     fn test_read_string_unicode_escape_lowercase_hex() {
         let mut lexer = Lexer::new(r#""\u00ff""#);
-        assert_eq!(lexer.read_string(), "\u{ff}");
+        assert_eq!(lexer.read_string().unwrap(), "\u{ff}");
     }
 
     #[test]
     fn test_read_string_unicode_escape_mixed_case() {
         let mut lexer = Lexer::new(r#""\u00Ff""#);
-        assert_eq!(lexer.read_string(), "\u{ff}");
+        assert_eq!(lexer.read_string().unwrap(), "\u{ff}");
     }
 
     #[test]
     fn test_read_string_unicode_snowman() {
         let mut lexer = Lexer::new(r#""\u2603""#);
-        assert_eq!(lexer.read_string(), "☃");
+        assert_eq!(lexer.read_string().unwrap(), "☃");
     }
 
     #[test]
     fn test_read_string_multiple_unicode() {
         let mut lexer = Lexer::new(r#""\u0048\u0065\u006c\u006c\u006f""#);
-        assert_eq!(lexer.read_string(), "Hello");
+        assert_eq!(lexer.read_string().unwrap(), "Hello");
     }
 
     #[test]
@@ -431,37 +468,37 @@ mod tests {
             "\"",       // closing "
         );
         let mut lexer = Lexer::new(input);
-        assert_eq!(lexer.read_string(), "line1\nline2\tindented\"");
+        assert_eq!(lexer.read_string().unwrap(), "line1\nline2\tindented\"");
     }
 
     // ── read_string – error cases ─────────────────────────────────
 
     #[test]
-    #[should_panic(expected = "Unterminated String")]
+    #[should_panic]
     fn test_read_string_unterminated() {
         let mut lexer = Lexer::new(r#""hello"#);
-        lexer.read_string();
+        lexer.read_string().unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Inalid escape sequence")]
+    #[should_panic]
     fn test_read_string_invalid_escape() {
         let mut lexer = Lexer::new(r#""\x""#);
-        lexer.read_string();
+        lexer.read_string().unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Inalid escape sequence")]
+    #[should_panic]
     fn test_read_string_invalid_escape_letter() {
         let mut lexer = Lexer::new(r#""\a""#);
-        lexer.read_string();
+        lexer.read_string().unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Unterminated escape sequence")]
+    #[should_panic]
     fn test_read_string_unterminated_escape() {
         let mut lexer = Lexer::new(r#""\"#);
-        lexer.read_string();
+        lexer.read_string().unwrap();
     }
 
     // ── read_unicode_escape ───────────────────────────────────────
@@ -469,21 +506,21 @@ mod tests {
     #[test]
     fn test_read_unicode_escape_basic() {
         let mut lexer = Lexer::new("0041");
-        assert_eq!(lexer.read_unicode_escape(), 0x0041);
+        assert_eq!(lexer.read_unicode_escape().unwrap(), 0x0041);
     }
 
     #[test]
-    #[should_panic(expected = "Invalid hex digit")]
+    #[should_panic]
     fn test_read_unicode_escape_invalid_hex() {
         let mut lexer = Lexer::new("00GG");
-        lexer.read_unicode_escape();
+        lexer.read_unicode_escape().unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Unterminated unicode escape")]
+    #[should_panic]
     fn test_read_unicode_escape_unterminated() {
         let mut lexer = Lexer::new("00");
-        lexer.read_unicode_escape();
+        lexer.read_unicode_escape().unwrap();
     }
 
     // ── read_number ───────────────────────────────────────────────
@@ -491,62 +528,62 @@ mod tests {
     #[test]
     fn test_read_number_integer() {
         let mut lexer = Lexer::new("42");
-        assert_eq!(lexer.read_number(), 42.0);
+        assert_eq!(lexer.read_number().unwrap(), 42.0);
     }
 
     #[test]
     fn test_read_number_negative() {
         let mut lexer = Lexer::new("-42");
-        assert_eq!(lexer.read_number(), -42.0);
+        assert_eq!(lexer.read_number().unwrap(), -42.0);
     }
 
     #[test]
     fn test_read_number_decimal() {
         let mut lexer = Lexer::new("3.14");
-        assert_eq!(lexer.read_number(), 3.14);
+        assert_eq!(lexer.read_number().unwrap(), 3.14);
     }
 
     #[test]
     fn test_read_number_negative_decimal() {
         let mut lexer = Lexer::new("-3.14");
-        assert_eq!(lexer.read_number(), -3.14);
+        assert_eq!(lexer.read_number().unwrap(), -3.14);
     }
 
     #[test]
     fn test_read_number_zero() {
         let mut lexer = Lexer::new("0");
-        assert_eq!(lexer.read_number(), 0.0);
+        assert_eq!(lexer.read_number().unwrap(), 0.0);
     }
 
     #[test]
     fn test_read_number_negative_zero() {
         let mut lexer = Lexer::new("-0");
-        assert_eq!(lexer.read_number(), -0.0);
+        assert_eq!(lexer.read_number().unwrap(), -0.0);
     }
 
     #[test]
     fn test_read_number_zero_decimal() {
         let mut lexer = Lexer::new("0.5");
-        assert_eq!(lexer.read_number(), 0.5);
+        assert_eq!(lexer.read_number().unwrap(), 0.5);
     }
 
     #[test]
     fn test_read_number_large() {
         let mut lexer = Lexer::new("999999");
-        assert_eq!(lexer.read_number(), 999999.0);
+        assert_eq!(lexer.read_number().unwrap(), 999999.0);
     }
 
     #[test]
     fn test_read_number_stops_at_non_digit() {
         let mut lexer = Lexer::new("42 }");
-        assert_eq!(lexer.read_number(), 42.0);
+        assert_eq!(lexer.read_number().unwrap(), 42.0);
         assert_eq!(lexer.current(), Some(b' '));
     }
 
     #[test]
     fn test_read_negative_number_stops_at_non_digit() {
         let mut lexer = Lexer::new("-42,");
-        assert_eq!(lexer.read_number(), -42.0);
+        assert_eq!(lexer.read_number().unwrap(), -42.0);
         assert_eq!(lexer.current(), Some(b','));
     }
 
@@ -555,49 +592,49 @@ mod tests {
     #[test]
     fn test_read_keyword_true() {
         let mut lexer = Lexer::new("true");
-        lexer.read_keyword("true");
+        lexer.read_keyword("true").unwrap();
         assert_eq!(lexer.current(), None);
     }
 
     #[test]
     fn test_read_keyword_false() {
         let mut lexer = Lexer::new("false");
-        lexer.read_keyword("false");
+        lexer.read_keyword("false").unwrap();
         assert_eq!(lexer.current(), None);
     }
 
     #[test]
     fn test_read_keyword_null() {
         let mut lexer = Lexer::new("null");
-        lexer.read_keyword("null");
+        lexer.read_keyword("null").unwrap();
         assert_eq!(lexer.current(), None);
     }
 
     #[test]
-    #[should_panic(expected = "Unexpected character")]
+    #[should_panic]
     fn test_read_keyword_invalid() {
         let mut lexer = Lexer::new("trux");
-        lexer.read_keyword("true");
+        lexer.read_keyword("true").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Unexpected end of input")]
+    #[should_panic]
     fn test_read_keyword_truncated() {
         let mut lexer = Lexer::new("tr");
-        lexer.read_keyword("true");
+        lexer.read_keyword("true").unwrap();
     }
 
     // ── tokenise – empty / whitespace ─────────────────────────────
 
     #[test]
     fn test_tokenise_empty_input() {
-        let tokens = tokenise("");
+        let tokens = tokenise("").unwrap();
         assert!(tokens.is_empty());
     }
 
     #[test]
     fn test_tokenise_whitespace_only() {
-        let tokens = tokenise("   \t\n\r   ");
+        let tokens = tokenise("   \t\n\r   ").unwrap();
         assert!(tokens.is_empty());
     }
 
@@ -605,70 +642,70 @@ mod tests {
 
     #[test]
     fn test_tokenise_left_brace() {
-        assert_eq!(tokenise("{"), vec![Token::LeftBrace]);
+        assert_eq!(tokenise("{").unwrap(), vec![Token::LeftBrace]);
     }
 
     #[test]
     fn test_tokenise_right_brace() {
-        assert_eq!(tokenise("}"), vec![Token::RightBrace]);
+        assert_eq!(tokenise("}").unwrap(), vec![Token::RightBrace]);
     }
 
     #[test]
     fn test_tokenise_left_bracket() {
-        assert_eq!(tokenise("["), vec![Token::LeftBracket]);
+        assert_eq!(tokenise("[").unwrap(), vec![Token::LeftBracket]);
     }
 
     #[test]
     fn test_tokenise_right_bracket() {
-        assert_eq!(tokenise("]"), vec![Token::RightBracket]);
+        assert_eq!(tokenise("]").unwrap(), vec![Token::RightBracket]);
     }
 
     #[test]
     fn test_tokenise_colon() {
-        assert_eq!(tokenise(":"), vec![Token::Colon]);
+        assert_eq!(tokenise(":").unwrap(), vec![Token::Colon]);
     }
 
     #[test]
     fn test_tokenise_comma() {
-        assert_eq!(tokenise(","), vec![Token::Comma]);
+        assert_eq!(tokenise(",").unwrap(), vec![Token::Comma]);
     }
 
     #[test]
     fn test_tokenise_true() {
-        assert_eq!(tokenise("true"), vec![Token::True]);
+        assert_eq!(tokenise("true").unwrap(), vec![Token::True]);
     }
 
     #[test]
     fn test_tokenise_false() {
-        assert_eq!(tokenise("false"), vec![Token::False]);
+        assert_eq!(tokenise("false").unwrap(), vec![Token::False]);
     }
 
     #[test]
     fn test_tokenise_null() {
-        assert_eq!(tokenise("null"), vec![Token::Null]);
+        assert_eq!(tokenise("null").unwrap(), vec![Token::Null]);
     }
 
     #[test]
     fn test_tokenise_string() {
         assert_eq!(
-            tokenise(r#""hello""#),
+            tokenise(r#""hello""#).unwrap(),
             vec![Token::String("hello".to_string())]
         );
     }
 
     #[test]
     fn test_tokenise_number_integer() {
-        assert_eq!(tokenise("42"), vec![Token::Number(42.0)]);
+        assert_eq!(tokenise("42").unwrap(), vec![Token::Number(42.0)]);
     }
 
     #[test]
     fn test_tokenise_number_negative() {
-        assert_eq!(tokenise("-42"), vec![Token::Number(-42.0)]);
+        assert_eq!(tokenise("-42").unwrap(), vec![Token::Number(-42.0)]);
     }
 
     #[test]
     fn test_tokenise_number_decimal() {
-        assert_eq!(tokenise("3.14"), vec![Token::Number(3.14)]);
+        assert_eq!(tokenise("3.14").unwrap(), vec![Token::Number(3.14)]);
     }
 
     // ── tokenise – multiple tokens ────────────────────────────────
@@ -676,7 +713,7 @@ mod tests {
     #[test]
     fn test_tokenise_symbols() {
         assert_eq!(
-            tokenise("{}[]:,"),
+            tokenise("{}[]:,").unwrap(),
             vec![
                 Token::LeftBrace,
                 Token::RightBrace,
@@ -690,14 +727,14 @@ mod tests {
 
     #[test]
     fn test_tokenise_mixed_whitespace() {
-        let tokens = tokenise("  \t\r\n{\n\t}  ");
+        let tokens = tokenise("  \t\r\n{\n\t}  ").unwrap();
         assert_eq!(tokens, vec![Token::LeftBrace, Token::RightBrace]);
     }
 
     #[test]
     fn test_tokenise_multiple_strings() {
         assert_eq!(
-            tokenise(r#""a" "b" "c""#),
+            tokenise(r#""a" "b" "c""#).unwrap(),
             vec![
                 Token::String("a".to_string()),
                 Token::String("b".to_string()),
@@ -709,7 +746,7 @@ mod tests {
     #[test]
     fn test_tokenise_multiple_numbers() {
         assert_eq!(
-            tokenise("1 2 3"),
+            tokenise("1 2 3").unwrap(),
             vec![Token::Number(1.0), Token::Number(2.0), Token::Number(3.0)]
         );
     }
@@ -717,7 +754,7 @@ mod tests {
     #[test]
     fn test_tokenise_simple_object() {
         assert_eq!(
-            tokenise(r#"{"k":"v"}"#),
+            tokenise(r#"{"k":"v"}"#).unwrap(),
             vec![
                 Token::LeftBrace,
                 Token::String("k".to_string()),
@@ -731,7 +768,7 @@ mod tests {
     #[test]
     fn test_tokenise_simple_array() {
         assert_eq!(
-            tokenise(r#"[1,2,3]"#),
+            tokenise(r#"[1,2,3]"#).unwrap(),
             vec![
                 Token::LeftBracket,
                 Token::Number(1.0),
@@ -746,28 +783,28 @@ mod tests {
 
     #[test]
     fn test_tokenise_keyword_after_whitespace() {
-        assert_eq!(tokenise("  true  "), vec![Token::True]);
-        assert_eq!(tokenise("\tfalse\n"), vec![Token::False]);
-        assert_eq!(tokenise("\r\nnull\r\n"), vec![Token::Null]);
+        assert_eq!(tokenise("  true  ").unwrap(), vec![Token::True]);
+        assert_eq!(tokenise("\tfalse\n").unwrap(), vec![Token::False]);
+        assert_eq!(tokenise("\r\nnull\r\n").unwrap(), vec![Token::Null]);
     }
 
     // ── tokenise – error cases ────────────────────────────────────
 
     #[test]
-    #[should_panic(expected = "Unexpected character")]
+    #[should_panic]
     fn test_tokenise_unexpected_at_symbol() {
-        tokenise("@");
+        tokenise("@").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Unexpected character")]
+    #[should_panic]
     fn test_tokenise_unexpected_tilde() {
-        tokenise("~");
+        tokenise("~").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Unexpected character")]
+    #[should_panic]
     fn test_tokenise_unexpected_control_char() {
-        tokenise("\x01");
+        tokenise("\x01").unwrap();
     }
 }

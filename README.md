@@ -16,6 +16,7 @@ It can tokenise JSON text, parse it into a `JsonValue` tree, and print it back i
 
 - `src/tokeniser.rs` - Lexer/tokeniser (`tokenise`)
 - `src/parser.rs` - Recursive-descent parser (`parse`)
+- `src/error.rs` - Shared parser/tokeniser error type
 - `src/value.rs` - `JsonValue` enum and display formatting
 - `src/lib.rs` - Public library exports
 - `src/bin/main.rs` - Example binary entrypoint
@@ -48,13 +49,15 @@ cargo test
 ## Library Usage
 
 ```rust
-use jsonparser::{parse, tokenise};
+use jsonparser::{parse, tokenise, Result};
 
-fn main() {
+fn main() -> Result<()> {
     let input = r#"{"name":"Soraya","age":30,"active":true}"#;
-    let tokens = tokenise(input);
-    let value = parse(tokens);
+    let tokens = tokenise(input)?;
+    let value = parse(tokens)?;
     println!("{value}");
+
+    Ok(())
 }
 ```
 
@@ -69,5 +72,5 @@ fn main() {
 
 ## Current Limitations
 
-- Parsing errors currently panic instead of returning `Result`
-- The top-level parse function parses one value and does not explicitly reject trailing tokens
+- Numbers are parsed as `f64`
+- Unicode escape parsing does not combine UTF-16 surrogate pairs
