@@ -34,10 +34,22 @@ Build the project:
 cargo build
 ```
 
-Run the example binary:
+Run the parser with JSON from a file:
 
 ```bash
-cargo run --bin jsonparser
+cargo run --bin jsonparser -- input.json
+```
+
+Or pass JSON through standard input:
+
+```bash
+echo '{"name":"Soraya","age":30}' | cargo run --bin jsonparser --
+```
+
+Use `-` to explicitly read from standard input:
+
+```bash
+echo '{"active":true}' | cargo run --bin jsonparser -- -
 ```
 
 Run tests:
