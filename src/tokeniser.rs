@@ -81,13 +81,13 @@ impl Lexer {
     ///
     /// # Errors
     ///
-    /// Returns [`JsonError::UnterminatedString`] if the closing quote is
-    /// missing, [`JsonError::InvalidEscape`] for an unsupported escape,
-    /// [`JsonError::UnterminatedEscape`] for a dangling backslash,
-    /// [`JsonError::InvalidUnicodeEscape`] or
-    /// [`JsonError::UnterminatedUnicodeEscape`] for malformed `\uXXXX`
-    /// escapes, and [`JsonError::InvalidUnicodeCodepoint`] if the decoded
-    /// codepoint is not a valid Unicode scalar value.
+    /// This function will return an error if:
+    ///
+    /// - [`JsonError::UnterminatedString`] if the closing quote is missing.
+    /// - [`JsonError::InvalidEscape`] for an unsupported escape.
+    /// - [`JsonError::UnterminatedEscape`] for a dangling backslash.
+    /// - [`JsonError::InvalidUnicodeEscape`] or [`JsonError::UnterminatedUnicodeEscape`] for malformed `\uXXXX escapes.
+    /// - [`JsonError::InvalidUnicodeCodepoint`] if the decoded codepoint is not a valid Unicode scalar value.
     pub fn read_string(&mut self) -> Result<String> {
         let start = self.pos;
 
