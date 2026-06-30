@@ -11,7 +11,7 @@ pub struct Parser {
 
 impl Parser {
     #[must_use]
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub const fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
@@ -32,7 +32,7 @@ impl Parser {
         }
     }
 
-    pub fn advance(&mut self) {
+    pub const fn advance(&mut self) {
         self.pos += 1;
     }
 
@@ -119,7 +119,7 @@ impl Parser {
 
         let mut array = Vec::new();
         // empty array
-        if let Token::RightBracket = self.current()? {
+        if matches!(self.current()?, Token::RightBracket) {
             self.advance();
             return Ok(JsonValue::Array(array));
         }
@@ -166,7 +166,7 @@ impl Parser {
         let mut pairs: Vec<(String, JsonValue)> = Vec::new();
 
         // object may be empty
-        if let Token::RightBrace = self.current()? {
+        if matches!(self.current()?, Token::RightBrace) {
             self.advance();
             return Ok(JsonValue::Object(pairs));
         }
@@ -271,8 +271,8 @@ mod tests {
 
     #[test]
     fn test_parse_number() {
-        let tokens = vec![Token::Number(3.14)];
-        assert_eq!(parse(tokens).unwrap(), JsonValue::Number(3.14));
+        let tokens = vec![Token::Number(3.19)];
+        assert_eq!(parse(tokens).unwrap(), JsonValue::Number(3.19));
     }
 
     #[test]

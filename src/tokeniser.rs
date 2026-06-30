@@ -60,7 +60,7 @@ impl Lexer {
         }
     }
 
-    pub fn advance(&mut self) {
+    pub const fn advance(&mut self) {
         self.pos += 1;
     }
 
@@ -254,7 +254,7 @@ impl Lexer {
         let mut s = String::new();
 
         // optional minus sign
-        if let Some(b'-') = self.current() {
+        if self.current() == Some(b'-') {
             s.push('-');
             self.advance();
         }
@@ -266,7 +266,7 @@ impl Lexer {
         }
 
         // optional decimal part
-        if let Some(b'.') = self.current() {
+        if self.current() == Some(b'.') {
             s.push('.');
             self.advance();
 
@@ -610,14 +610,14 @@ mod tests {
 
     #[test]
     fn test_read_number_decimal() {
-        let mut lexer = Lexer::new("3.14");
-        assert_eq!(lexer.read_number().unwrap(), 3.14);
+        let mut lexer = Lexer::new("3.19");
+        assert_eq!(lexer.read_number().unwrap(), 3.19);
     }
 
     #[test]
     fn test_read_number_negative_decimal() {
-        let mut lexer = Lexer::new("-3.14");
-        assert_eq!(lexer.read_number().unwrap(), -3.14);
+        let mut lexer = Lexer::new("-3.19");
+        assert_eq!(lexer.read_number().unwrap(), -3.19);
     }
 
     #[test]
@@ -776,7 +776,7 @@ mod tests {
 
     #[test]
     fn test_tokenise_number_decimal() {
-        assert_eq!(tokenise("3.14").unwrap(), vec![Token::Number(3.14)]);
+        assert_eq!(tokenise("3.19").unwrap(), vec![Token::Number(3.19)]);
     }
 
     // ── tokenise – multiple tokens ────────────────────────────────

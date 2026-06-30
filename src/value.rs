@@ -6,12 +6,12 @@ pub enum JsonValue {
     /// A JSON object.
     Object(
         /// Object members stored in source order as key/value pairs.
-        Vec<(String, JsonValue)>,
+        Vec<(String, Self)>,
     ),
     /// A JSON array.
     Array(
         /// Array elements stored in source order.
-        Vec<JsonValue>,
+        Vec<Self>,
     ),
     /// A JSON string.
     String(
@@ -111,12 +111,15 @@ mod tests {
 
     #[test]
     fn display_number_decimal() {
-        assert_eq!(format!("{}", JsonValue::Number(3.14)), "3.14");
+        assert_eq!(format!("{}", JsonValue::Number(3.19)), "3.19");
     }
 
     #[test]
     fn display_string() {
-        assert_eq!(format!("{}", JsonValue::String("hello".to_string())), "\"hello\"");
+        assert_eq!(
+            format!("{}", JsonValue::String("hello".to_string())),
+            "\"hello\""
+        );
     }
 
     #[test]
@@ -126,7 +129,10 @@ mod tests {
 
     #[test]
     fn display_string_with_escapes() {
-        assert_eq!(format!("{}", JsonValue::String("line1\nline2".to_string())), "\"line1\nline2\"");
+        assert_eq!(
+            format!("{}", JsonValue::String("line1\nline2".to_string())),
+            "\"line1\nline2\""
+        );
     }
 
     #[test]
@@ -145,12 +151,15 @@ mod tests {
     #[test]
     fn display_array_multiple() {
         assert_eq!(
-            format!("{}", JsonValue::Array(vec![
-                JsonValue::Number(1.0),
-                JsonValue::String("two".to_string()),
-                JsonValue::Boolean(true),
-                JsonValue::Null,
-            ])),
+            format!(
+                "{}",
+                JsonValue::Array(vec![
+                    JsonValue::Number(1.0),
+                    JsonValue::String("two".to_string()),
+                    JsonValue::Boolean(true),
+                    JsonValue::Null,
+                ])
+            ),
             r#"[1, "two", true, null]"#
         );
     }
@@ -163,9 +172,13 @@ mod tests {
     #[test]
     fn display_object_single_pair() {
         assert_eq!(
-            format!("{}", JsonValue::Object(vec![
-                ("key".to_string(), JsonValue::String("value".to_string())),
-            ])),
+            format!(
+                "{}",
+                JsonValue::Object(vec![(
+                    "key".to_string(),
+                    JsonValue::String("value".to_string())
+                ),])
+            ),
             r#"{"key": "value"}"#
         );
     }
@@ -173,11 +186,14 @@ mod tests {
     #[test]
     fn display_object_multiple_pairs() {
         assert_eq!(
-            format!("{}", JsonValue::Object(vec![
-                ("a".to_string(), JsonValue::Number(1.0)),
-                ("b".to_string(), JsonValue::Boolean(true)),
-                ("c".to_string(), JsonValue::Null),
-            ])),
+            format!(
+                "{}",
+                JsonValue::Object(vec![
+                    ("a".to_string(), JsonValue::Number(1.0)),
+                    ("b".to_string(), JsonValue::Boolean(true)),
+                    ("c".to_string(), JsonValue::Null),
+                ])
+            ),
             r#"{"a": 1, "b": true, "c": null}"#
         );
     }
@@ -200,14 +216,11 @@ mod tests {
     fn display_mixed_nesting() {
         let obj = JsonValue::Object(vec![
             ("name".to_string(), JsonValue::String("test".to_string())),
-            ("nums".to_string(), JsonValue::Array(vec![
-                JsonValue::Number(1.0),
-                JsonValue::Number(2.0),
-            ])),
+            (
+                "nums".to_string(),
+                JsonValue::Array(vec![JsonValue::Number(1.0), JsonValue::Number(2.0)]),
+            ),
         ]);
-        assert_eq!(
-            format!("{}", obj),
-            r#"{"name": "test", "nums": [1, 2]}"#
-        );
+        assert_eq!(format!("{}", obj), r#"{"name": "test", "nums": [1, 2]}"#);
     }
 }
